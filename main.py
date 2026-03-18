@@ -1,24 +1,33 @@
 import streamlit as st
+import pandas as pd
 from openai import OpenAI
 
 
 cliente = OpenAI(api_key="")
 
+st.set_page_config(page_title="Assistente Financeiro Kai", layout="centered")
 st.title("💰 Assistente Financeiro com IA")
 
-
-if "lista_mensagens" not in st.session_state:
-    st.session_state["lista_mensagens"] = [
-        {"role": "system", "content": "Você é um assistente financeiro claro, didático e responsável."}
+if "mensagens" not in st.session_state:
+    st.session_state["mensagens"] = [
+        {"role": "system", "content": "Você é um assistente financeiro claro, didático, responsável e prático."}
     ]
 
+if "gastos" not in st.session_state:
+    st.session_state["gastos"] = []
 
-for mensagem in st.session_state["lista_mensagens"]:
-    if mensagem["role"] != "system":
-        st.chat_message(mensagem["role"]).write(mensagem["content"])
+def gerar_resumo():
+    if not st.session_state["gastos"]:
+        return None
 
+    df = pd.DataFrame(st.session_state["gastos"])
 
-texto_usuario = st.chat_input("Digite sua mensagem...")
+    return {
+        "df": df,
+        "total": df["valor"].sum(),
+        "media": df["valor"].mean(),
+        "maior": df["valor"].max()
+    }
 
 def simular_investimento(texto):
     try:
@@ -29,32 +38,89 @@ def simular_investimento(texto):
             valor = numeros[0]
             meses = int(numeros[1])
             total = valor * meses
-            return f"💰 Se você investir {valor} por {meses} meses, terá aproximadamente R$ {total:.2f} (sem juros)."
+            return f"Investindo R$ {valor:.2f} por {meses} meses → R$ {total:.2f} (sem juros)."
     except:
         pass
     return None
 
-if texto_usuario:
-    
-    st.chat_message("user").write(texto_usuario)
+for msg in st.session_state["mensagens"]:
+    if msg["role"] != "system":
+        st.chat_message(msg["role"]).write(msg["content"])
 
-    mensagem_usuario = {"role": "user", "content": texto_usuario}
-    st.session_state["lista_mensagens"].append(mensagem_usuario)
+entrada = st.chat_input("Digite algo como: gasto 50 | resumo | simular 100 12 | dicas")
 
-    
-    resposta_simulacao = simular_investimento(texto_usuario)
+if entrada:
+    st.chat_message("user").write(entrada)
+    st.session_state["mensagens"].append({"role": "user", "content": entrada})
 
-    if resposta_simulacao:
-        texto_resposta_ia = resposta_simulacao
+    texto = entrada.lower()
+    resposta = ""
+
+    if "gasto" in texto:
+        try:
+            valor = float(next(p for p in texto.split() if p.replace('.', '', 1).isdigit()))
+
+            st.session_state["gastos"].append({
+                "categoria": "geral",
+                "valor": valor
+            })
+
+            resposta = f"✅ Gasto de R$ {valor:.2f} registrado."
+
+        except:
+            resposta = "⚠️ Use: gasto 50"
+
+    elif "resumo" in texto:
+        resumo = gerar_resumo()
+
+        if not resumo:
+            resposta = "📭 Nenhum gasto registrado."
+        else:
+            resposta = (
+                f"📊 Resumo:\n"
+                f"- Total: R$ {resumo['total']:.2f}\n"
+                f"- Média: R$ {resumo['media']:.2f}\n"
+                f"- Maior gasto: R$ {resumo['maior']:.2f}"
+            )
+
+            st.dataframe(resumo["df"])
+
+    elif "simular" in texto:
+        resposta = simular_investimento(texto)
+        if not resposta:
+            resposta = "⚠️ Ex: simular 100 12"
+
     else:
-        resposta_ia = cliente.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=st.session_state["lista_mensagens"]
-        )
-        texto_resposta_ia = resposta_ia.choices[0].message.content
+        resumo = gerar_resumo()
 
-    
-    st.chat_message("assistant").write(texto_resposta_ia)
+        contexto = "Sem dados financeiros." if not resumo else resumo["df"].to_string(index=False)
 
-    mensagem_ia = {"role": "assistant", "content": texto_resposta_ia}
-    st.session_state["lista_mensagens"].append(mensagem_ia)
+        prompt = f"""
+Você é um assistente financeiro de um banco digital.
+
+Regras:
+- Seja claro, direto e útil
+- Dê exemplos simples
+- Sugira melhorias práticas
+- Evite termos complexos
+
+Dados do cliente:
+{contexto}
+
+Pergunta:
+{entrada}
+"""
+
+        try:
+            resposta_ia = cliente.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            resposta = resposta_ia.choices[0].message.content
+
+        except Exception as e:
+            resposta = f"Erro: {e}"
+
+    st.chat_message("assistant").write(resposta)
+    st.session_state["mensagens"].append({"role": "assistant", "content": resposta})
