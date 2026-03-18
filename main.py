@@ -1,55 +1,60 @@
-import openai
-
-openai.api_key = ""
-
-historico = []
-
-def responder(pergunta):
-    historico.append({"role": "user", "content": pergunta})
-
-    resposta = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "system", "content": "Você é um assistente financeiro claro, didático e responsável."}] + historico
-    )
-
-    texto = resposta.choices[0].message.content
-    historico.append({"role": "assistant", "content": texto})
-
-    return texto
+import streamlit as st
+from openai import OpenAI
 
 
-def simular_investimento():
+cliente = OpenAI(api_key="")
+
+st.title("💰 Assistente Financeiro com IA")
+
+
+if "lista_mensagens" not in st.session_state:
+    st.session_state["lista_mensagens"] = [
+        {"role": "system", "content": "Você é um assistente financeiro claro, didático e responsável."}
+    ]
+
+
+for mensagem in st.session_state["lista_mensagens"]:
+    if mensagem["role"] != "system":
+        st.chat_message(mensagem["role"]).write(mensagem["content"])
+
+
+texto_usuario = st.chat_input("Digite sua mensagem...")
+
+def simular_investimento(texto):
     try:
-        valor = float(input("Quanto deseja investir por mês? "))
-        meses = int(input("Por quantos meses? "))
+        palavras = texto.split()
+        numeros = [float(p) for p in palavras if p.replace('.', '', 1).isdigit()]
 
-        total = valor * meses
-
-        print(f"\n💰 Resultado:")
-        print(f"Investindo {valor} por {meses} meses, você acumulará R$ {total:.2f} (sem juros).")
-
+        if len(numeros) >= 2:
+            valor = numeros[0]
+            meses = int(numeros[1])
+            total = valor * meses
+            return f"💰 Se você investir {valor} por {meses} meses, terá aproximadamente R$ {total:.2f} (sem juros)."
     except:
-        print("⚠️ Erro ao calcular. Tente novamente.")
+        pass
+    return None
 
+if texto_usuario:
+    
+    st.chat_message("user").write(texto_usuario)
 
-while True:
-    print("\n1 - Fazer pergunta")
-    print("2 - Simular investimento")
-    print("3 - Sair")
+    mensagem_usuario = {"role": "user", "content": texto_usuario}
+    st.session_state["lista_mensagens"].append(mensagem_usuario)
 
-    opcao = input("Escolha: ")
+    
+    resposta_simulacao = simular_investimento(texto_usuario)
 
-    if opcao == "1":
-        pergunta = input("Digite sua dúvida: ")
-        resposta = responder(pergunta)
-        print("\n🤖", resposta)
-
-    elif opcao == "2":
-        simular_investimento()
-
-    elif opcao == "3":
-        print("Encerrando...")
-        break
-
+    if resposta_simulacao:
+        texto_resposta_ia = resposta_simulacao
     else:
-        print("Opção inválida.")
+        resposta_ia = cliente.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=st.session_state["lista_mensagens"]
+        )
+        texto_resposta_ia = resposta_ia.choices[0].message.content
+
+    
+    st.chat_message("assistant").write(texto_resposta_ia)
+
+    mensagem_ia = {"role": "assistant", "content": texto_resposta_ia}
+    st.session_state["lista_mensagens"].append(mensagem_ia)
